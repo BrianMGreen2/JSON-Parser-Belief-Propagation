@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JSON Belief Propagation Diagram</title>
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --surface: #fbfbf9;
+      --text: #28251d;
+      --muted: #6f6d67;
+      --border: #d8d4ce;
+      --accent: #01696f;
+      --accent-soft: #d8ebea;
+      --warn: #964219;
+      --shadow: 0 10px 30px rgba(40,37,29,0.08);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #f7f6f2 0%, #f1efea 100%);
+    }
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .card {
+      background: rgba(251,251,249,0.88);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+    }
+    .header {
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
+      align-items: start;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.25rem;
+      line-height: 1.2;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 72ch;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button, a.btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: white;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    button.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .canvas {
+      padding: 18px;
+      overflow: auto;
+    }
+    #diagram {
+      min-width: 1100px;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 10px;
+    }
+    .tips {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      padding: 0 18px 18px;
+    }
+    .tip {
+      background: var(--accent-soft);
+      border: 1px solid #bfd8d7;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 0.92rem;
+    }
+    .tip strong { display: block; margin-bottom: 4px; }
+    @media (max-width: 800px) {
+      .header { flex-direction: column; }
+      #diagram { min-width: 900px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header">
+        <div>
+          <h1>Belief Propagation in JSON Parsing</h1>
+          <p>Interactive Mermaid-rendered SVG showing how a parser-confidence belief can turn malformed or ambiguous JSON into downstream stateful errors.</p>
+        </div>
+        <div class="actions">
+          <button class="primary" id="downloadSvg">Download SVG</button>
+          <button id="copyCode">Copy Mermaid</button>
+        </div>
+      </div>
+      <div class="canvas">
+        <div id="diagram"></div>
+      </div>
+      <div class="tips">
+        <div class="tip"><strong>Use in Notion</strong>Open this file, then download the rendered SVG and upload that SVG into Notion.</div>
+        <div class="tip"><strong>Interactive view</strong>Pan with trackpad or mouse scroll in the diagram container when the sequence is wide.</div>
+        <div class="tip"><strong>Editable source</strong>The Mermaid source is embedded, so you can copy and revise labels later.</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    const source = String.raw`sequenceDiagram
+    autonumber
+    participant U as User
+    participant M as LLM / Agent
+    participant P as JSON Parser
+    participant V as Schema Validator
+    participant T as Tool / Service
+    participant D as Downstream System
+
+    U->>M: Natural language request
+    M-->>P: Generated response\n(marked as JSON)
+    P->>P: json.loads(...)
+    alt Valid JSON
+        P-->>V: Parsed JSON object
+        V->>V: Validate against schema
+        alt Schema ok
+            V-->>T: Struct with typed fields
+            T->>D: Execute action with arguments
+            D-->>T: Result
+            T-->>M: Tool result
+            M-->>U: Final answer
+        else Schema failure
+            V-->>M: Validation error\n(missing fields / wrong types)
+            M->>M: Heuristic fix\n(re-prompt or patch)
+            M-->>P: New fixed JSON string
+            P->>P: Re-parse (best-effort)
+            Note over M,V: Belief: parser will cope\nReality: lossy fixes propagate
+        end
+    else JSON parse error
+        P-->>M: JSONDecodeError
+        M->>M: Fallback logic\n(strip fences, truncate, coerce)
+        M-->>P: Modified string\n(this should parse)
+        P->>P: Retry parse
+        alt Forced success
+            P-->>V: Partially valid object
+            V->>V: Best-effort validation\n(implicit coercions)
+            V-->>T: Ambiguous struct
+            T->>D: Run with bad args
+            D-->>T: Unexpected behavior
+            Note over T,D: Error propagates into\nside effects and state
+        else Hard failure
+            P-->>M: Still not parseable
+            M-->>U: Tool failed / vague error
+        end
+    end`;
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      securityLevel: 'loose',
+      themeVariables: {
+        primaryColor: '#d8ebea',
+        primaryTextColor: '#28251d',
+        primaryBorderColor: '#01696f',
+        lineColor: '#4a4a46',
+        secondaryColor: '#f3f0ec',
+        tertiaryColor: '#ffffff',
+        fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+        noteBkgColor: '#fff5eb',
+        noteBorderColor: '#964219',
+        activationBorderColor: '#01696f',
+        actorBorder: '#01696f',
+        actorBkg: '#eef7f6',
+        actorTextColor: '#28251d',
+        altSectionBkgColor: '#f9f8f5',
+        altSectionBkgColor2: '#f3f7f7',
+        altSectionBorderColor: '#cfdad9',
+        signalTextColor: '#28251d',
+        labelBoxBkgColor: '#ffffff',
+        labelBoxBorderColor: '#d8d4ce'
+      }
+    });
+
+    const { svg } = await mermaid.render('jsonBeliefPropagation', source);
+    const diagram = document.getElementById('diagram');
+    diagram.innerHTML = svg;
+
+    document.getElementById('copyCode').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(source);
+      const btn = document.getElementById('copyCode');
+      const original = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => btn.textContent = original, 1200);
+    });
+
+    document.getElementById('downloadSvg').addEventListener('click', () => {
+      const svgEl = diagram.querySelector('svg');
+      const serializer = new XMLSerializer();
+      const svgText = serializer.serializeToString(svgEl);
+      const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'belief-propagation-json-parsing.svg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
